@@ -244,10 +244,12 @@ def send_ip_window(key, iv, ciphertext):
 
             port = 12345  # Server's port
             # Send data using socket
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
-                s.connect((ip_address, port))
-                s.sendall(encrypted_data)  # Send the encoded data
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                s.settimeout(5)  # Set a timeout for the operation
+        
+        # Send to broadcast address (192.168.1.255) or specific IP
+                s.sendto(encrypted_data, (ip_address, port))  # Send the encoded data
             messagebox.showinfo("Success", "Data sent successfully.", parent=ip_window)
             ip_window.destroy()
 
@@ -317,17 +319,17 @@ def receive():
     host = '0.0.0.0'  # Listen on all interfaces
     port = 12345
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
         server_socket.bind((host, port))
-        server_socket.listen(1)
         print(f"Server listening on {host}:{port}...")
 
-        conn, addr = server_socket.accept()
-        with conn:
-            print(f"Connected by {addr}")
+        with True:
 
-            data = conn.recv(1024)
+            data, addr = server_socket.recvfrom(1024)  # Buffer size
+
             if data:
                 static_key = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
                 static_IV = bytes([0, 0, 0, 0, 0, 0, 0, 0])

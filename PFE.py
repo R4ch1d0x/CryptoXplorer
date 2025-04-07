@@ -318,42 +318,56 @@ def show_received_data(key, iv, cipher, sender_ip, sender_port):
 def receive():
     host = '0.0.0.0'  # Listen on all interfaces
     port = 12345
+    static_key = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
+    static_IV = bytes([0, 0, 0, 0, 0, 0, 0, 0])
 
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_socket:
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        try:
+            # Configure socket for broadcast reception
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            sock.bind((host, port))
+            print(f"Listening for broadcasts on port {port}...")
 
-        server_socket.bind((host, port))
-        print(f"Server listening on {host}:{port}...")
+            while True:  # Continuous listening loop
+                try:
+                    data, addr = sock.recvfrom(1024)  # Buffer size 1024 bytes
+                    if not data:
+                        continue
 
-        with True:
+                    # Decrypt received data
+                    received_text = aes_ctr_decrypt(data, static_key, static_IV)
+                    received_text = received_text.decode('utf-8').strip()
+                    print(f"Raw broadcast from {addr}:\n{received_text}")
 
-            data, addr = server_socket.recvfrom(1024)  # Buffer size
+                    # Parse components
+                    components = {
+                        "Key": None,
+                        "IV": None,
+                        "Ciphertext": None
+                    }
 
-            if data:
-                static_key = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-                static_IV = bytes([0, 0, 0, 0, 0, 0, 0, 0])
-                received_text = aes_ctr_decrypt(data, static_key, static_IV)
+                    for line in received_text.split('\n'):
+                        for component in components:
+                            if line.startswith(f"{component}:"):
+                                components[component] = line.split(":")[1].strip()
 
-                received_text = received_text.decode('utf-8').strip()  # Remove unnecessary spaces and \n
-                print(f"Raw received data:\n{received_text}")
+                    # Update GUI if all components present
+                    if all(components.values()):
+                        app.after(0, show_received_data, 
+                                 components["Key"],
+                                 components["IV"],
+                                 components["Ciphertext"],
+                                 addr[0], addr[1])
+                    else:
+                        print("Incomplete broadcast received")
 
-                # Extract Key, IV, and Ciphertext values
-                key, iv, cipher = None, None, None
-                for line in received_text.split('\n'):
-                    if line.startswith("Key:"):
-                        key = line.split("Key:")[1].strip()
-                    elif line.startswith("IV:"):
-                        iv = line.split("IV:")[1].strip()
-                    elif line.startswith("Ciphertext:"):
-                        cipher = line.split("Ciphertext:")[1].strip()
+                except Exception as e:
+                    print(f"Error processing broadcast: {e}")
+                    continue
 
-                # Show the received data in a separate window
-                if key and iv and cipher:
-                    sender_ip, sender_port = addr  # Extract sender IP and port
-                    app.after(0, show_received_data, key, iv, cipher, sender_ip, sender_port)  # Use `after` to safely update the GUI
-                else:
-                    print("Error: Missing key, IV, or ciphertext.")
+        except Exception as e:
+            print(f"Broadcast listener error: {e}")
 
 def start_receive_thread():
     threading.Thread(target=receive, daemon=True).start()

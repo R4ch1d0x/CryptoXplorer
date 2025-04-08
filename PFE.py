@@ -230,32 +230,54 @@ def send_ip_window(key, iv, ciphertext):
             messagebox.showerror("Error", "Please enter a valid IP address.", parent=ip_window)
             return
 
-        # Check if key, iv, and ciphertext are provided
-        if not key or not iv or not ciphertext:
-            messagebox.showerror("Error", "Key, IV, or encrypted text missing. Please ensure everything is generated correctly.", parent=ip_window)
+    # Validate cryptographic components
+        if not all([key, iv, ciphertext]):
+            messagebox.showerror("Error", 
+                "Key, IV, or encrypted text missing.\nPlease ensure everything is generated correctly.", 
+                parent=ip_window)
             return
 
         try:
-            static_key = bytes([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-            static_IV = bytes([0, 0, 0, 0, 0, 0, 0, 0])
+            # Security warning: Static keys are insecure for production use
+            static_key = bytes([0xFF] * 16)  # 16-byte key
+            static_IV = bytes([0] * 8)      # 8-byte IV
 
+            # Prepare the data payload
             data = f"Key:{key}\nIV:{iv}\nCiphertext:{ciphertext}"
             encrypted_data = aes_ctr_encrypt(data.encode('utf-8'), static_key, static_IV)
 
             port = 12345  # Server's port
-            # Send data using socket
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                s.settimeout(5)  # Set a timeout for the operation
         
-        # Send to broadcast address (192.168.1.255) or specific IP
-                s.sendto(encrypted_data, (ip_address, port))  # Send the encoded data
-            messagebox.showinfo("Success", "Data sent successfully.", parent=ip_window)
+        # UDP Broadcast transmission
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Configure socket for broadcasting
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                s.settimeout(5)  # 5-second timeout
+            
+                # Send to specified address (could be broadcast or unicast)
+                s.sendto(encrypted_data, (ip_address, port))
+            
+            messagebox.showinfo("Success", 
+                f"Data successfully sent to {ip_address}:{port}", 
+                parent=ip_window)
             ip_window.destroy()
 
+        except socket.timeout:
+            messagebox.showerror("Error", 
+                "Network timeout: No acknowledgment received.", 
+                parent=ip_window)
+        except socket.error as e:
+            messagebox.showerror("Network Error", 
+                f"Failed to send data: {str(e)}", 
+                parent=ip_window)
+        except ValueError as e:
+            messagebox.showerror("Encryption Error", 
+                f"Invalid cryptographic parameters: {str(e)}", 
+                parent=ip_window)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to send data: {e}", parent=ip_window)
-
+            messagebox.showerror("Unexpected Error", 
+                f"An unexpected error occurred: {str(e)}", 
+                parent=ip_window)
     # Send button with improved styling
     send_button = ctk.CTkButton(ip_window, text="Send", command=send_data, corner_radius=20, width=100, height=30)
     send_button.place(x=150, y=100)
